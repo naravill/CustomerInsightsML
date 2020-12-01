@@ -24,8 +24,6 @@ def pipeline_steps(hotelActivityData, customerData, serviceUsageData, output_dat
     #serviceUsageDF = serviceUsageData_selected.to_pandas_dataframe()
 
     # join hotel stay activity data on HotelCustomerID and customer data on ContosoHotel_HotelCustomers_HotelCustomerID inner join
-    #hotelActivityDF = hotelActivityData_selected.to_pandas_dataframe()
-    #customerDataDF = customerData_selected.to_pandas_dataframe()
     df_joined1 = hotelActivityDF.merge(customerDataDF, left_on="HotelCustomerID", right_on="ContosoHotel_HotelCustomers_HotelCustomerID")
     # select columns on joined dataset HotelCustomerID,RoomType,DollarsSpent,BookingType,TravelCategory,CheckInDate,CheckOutDate,NumberOfNights,CustomerId
     df_joined1_selected = df_joined1[["HotelCustomerID","RoomType","DollarsSpent","BookingType","TravelCategory","CheckInDate","CheckOutDate","NumberOfNights","CustomerId"]]
@@ -99,8 +97,8 @@ def pipeline_steps(hotelActivityData, customerData, serviceUsageData, output_dat
     df_before_sql_transform[["FirstStay"]] = df_before_sql_transform.groupby(by = "HotelCustomerID").min().reset_index()[["CheckInDate"]]
     df_before_sql_transform[["LastStay"]] = df_before_sql_transform.groupby(by = "HotelCustomerID").max().reset_index()[["CheckInDate"]]
     stay_info = df_before_sql_transform[columns_sum+["FirstStay","LastStay","HotelCustomerID"]].reset_index()
+    
     import datetime
-    # check why all columns are null
     # second part of the SQL query
     df_right = stay_info[["HotelCustomerID","StayDayCount","StayDayCount2016","StayDayCount2015","StayDayCount2014","StayCount","StayCount2016","StayCount2015","StayCount2014","FirstStay","LastStay"]]
     df_right["UsageTenure"] = pd.to_datetime("2016-12-31T00:00:00")-stay_info["FirstStay"]
@@ -134,8 +132,6 @@ def pipeline_steps(hotelActivityData, customerData, serviceUsageData, output_dat
     df_joined = df_left.merge(df_right, left_on = "HotelCustomerID", right_on = "ServicesCustomerID")
     df_joined = df_joined[[col for col in df_joined.columns if col not in ["HotelCustomerID","CustomerId","ServicesCustomerID"]]]
 
-    #permuted_indices = np.random.permutation(df_joined.index)
-    #train_len = int(0.8*len(permuted_indices))
     print("df_joined", df_joined["UsageTenure"].head())
     df_joined["UsageTenure"] = df_joined["UsageTenure"].fillna(pd.Timedelta(seconds=0))
 
@@ -148,10 +144,7 @@ def pipeline_steps(hotelActivityData, customerData, serviceUsageData, output_dat
     df_joined = df_joined[cols_labels]
     cols = [col for col in df_joined.columns if col not in ["Label"]]
     df_joined.fillna(0,inplace = True)
-    #result = model.predict(df_joined[cols].astype(int).values)
-    #print("result", result[:10])
-    # write to the file from May's doc
-
+    
     # df columns without FirstStay and LastStay, with Labels, and ScoredLabels, ScoredProbabilities of label 1
     if step_type =="test":
         df_result = df_joined
