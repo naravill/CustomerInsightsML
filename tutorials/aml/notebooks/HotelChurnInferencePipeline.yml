@@ -1,4 +1,4 @@
-name: conda_dependencies.yml
+name: HotelChurnInferencePipeline.yml
 dependencies:
 - python=3.8
 - pip:
