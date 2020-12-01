@@ -1,5 +1,10 @@
 # Azure Machine Learning tutorials for Customer Insights
 
+## Index
+|Title|Link|
+|--|--|
+|Azure Machine Learning Hotel Churn Scenario for Designer|[Hotel Churn Designer Walkthrough](ci-hotelchurn-designer.md)|
+|Azure Machine Learning Hotel Churn Scenario using SDK|[Hotel Churn SDK Notebook](notebooks/HotelChurnInferencePipeline.ipynb)|
 
 ## Churn Analysis
 
