@@ -1,0 +1,10 @@
+name: conda_dependencies.yml
+dependencies:
+- python=3.8
+- pip:
+  - azureml-defaults
+  - numpy
+  - scikit-learn
+  - pandas
+  - joblib
+  - azureml.core
