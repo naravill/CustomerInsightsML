@@ -1,3 +1,5 @@
+# Copyright (c) Microsoft. All rights reserved.
+# Licensed under the MIT license.
 
 import argparse
 import os
@@ -9,8 +11,18 @@ import sys
 import joblib
 from azureml.core.model import Model
 from azureml.core import Workspace
+from sklearn.linear_model import LogisticRegression
+import datetime
 
-def pipeline_steps(hotelActivityData, customerData, serviceUsageData, output_datastore, output_path, model, run, step_type = "train"):
+def pipeline_steps(hotelActivityData, customerData, serviceUsageData, config):
+    #variables from config file
+    output_datastore = config["output_datastore"]
+    output_path = config["output_path"]
+    model = config["model"]
+    run = config["run"] 
+    step_type = config["step_type"]
+    workspace = config["workspace"]
+
     hotelActivityColumns = [ "HotelCustomerID","CheckInDate","CheckOutDate","RoomType","DollarsSpent","BookingType","TravelCategory","NumberOfNights"]
     hotelActivityDF = hotelActivityData.to_pandas_dataframe()[hotelActivityColumns]
 
@@ -21,14 +33,12 @@ def pipeline_steps(hotelActivityData, customerData, serviceUsageData, output_dat
     # select ServicesCustomerID,ServiceName,ServiceDate,ServiceCost from Service Usage data
     serviceUsageDataColumns = [ "ServicesCustomerID", "ServiceName", "ServiceDate", "ServiceCost"]
     serviceUsageDF = serviceUsageData.to_pandas_dataframe()[serviceUsageDataColumns]
-    #serviceUsageDF = serviceUsageData_selected.to_pandas_dataframe()
 
     # join hotel stay activity data on HotelCustomerID and customer data on ContosoHotel_HotelCustomers_HotelCustomerID inner join
     df_joined1 = hotelActivityDF.merge(customerDataDF, left_on="HotelCustomerID", right_on="ContosoHotel_HotelCustomers_HotelCustomerID")
     # select columns on joined dataset HotelCustomerID,RoomType,DollarsSpent,BookingType,TravelCategory,CheckInDate,CheckOutDate,NumberOfNights,CustomerId
     df_joined1_selected = df_joined1[["HotelCustomerID","RoomType","DollarsSpent","BookingType","TravelCategory","CheckInDate","CheckOutDate","NumberOfNights","CustomerId"]]
     # sql transformation on previous dataframe 
-    # query = 'select * from t1 where [CheckInDate] < "2016-12-31T00:00:00"'
     df_joined1_selected_after_sql_transform = df_joined1_selected[df_joined1_selected["CheckInDate"]<"2016-12-31T00:00:00"]
 
     # change RoomType,BookingType,TravelCategory from previous dataframe to categorical type and features
@@ -50,7 +60,7 @@ def pipeline_steps(hotelActivityData, customerData, serviceUsageData, output_dat
     df2 = df_after_change_to_indicator_values[["HotelCustomerID","CustomerId"]]
     df_left = df1.merge(df2,left_on = "HotelCustomerID",right_on = "HotelCustomerID")
     
-    # convert NumberOfNights from da taframe after join and select columns to integer
+    # convert NumberOfNights from the dataframe after join and select columns to integer
     df_joined1_selected["NumberOfNights"] = df_joined1_selected["NumberOfNights"].astype(int)
     # apply sql transformation output is dfright
     def transform_dataframe_column(df,mask,col_name, col_from_dataframe ="NumberOfNights"):
@@ -63,8 +73,6 @@ def pipeline_steps(hotelActivityData, customerData, serviceUsageData, output_dat
         df[col_name][mask] = 1
         return df
         
-    print(df_joined1_selected.shape)
-    print(df_joined1_selected.dropna().shape)
     df_before_sql_transform = df_joined1_selected
 
     mask = df_before_sql_transform["CheckOutDate"]<="2016-12-31T00:00:00"
@@ -82,7 +90,7 @@ def pipeline_steps(hotelActivityData, customerData, serviceUsageData, output_dat
 
     mask = df_before_sql_transform["CheckOutDate"] <= "2016-12-31T00:00:00" 
     df_before_sql_transform = transform_dataframe_staycount_columns(df_before_sql_transform, mask, col_name = "StayCount")
-    # check here
+
     mask = (df_before_sql_transform["CheckOutDate"] <= "2016-12-31T00:00:00") & (df_before_sql_transform["CheckOutDate"] >= "2015-01-01T00:00:00")
     df_before_sql_transform = transform_dataframe_staycount_columns(df_before_sql_transform, mask, col_name = "StayCount2016")
 
@@ -97,8 +105,7 @@ def pipeline_steps(hotelActivityData, customerData, serviceUsageData, output_dat
     df_before_sql_transform[["FirstStay"]] = df_before_sql_transform.groupby(by = "HotelCustomerID").min().reset_index()[["CheckInDate"]]
     df_before_sql_transform[["LastStay"]] = df_before_sql_transform.groupby(by = "HotelCustomerID").max().reset_index()[["CheckInDate"]]
     stay_info = df_before_sql_transform[columns_sum+["FirstStay","LastStay","HotelCustomerID"]].reset_index()
-    
-    import datetime
+
     # second part of the SQL query
     df_right = stay_info[["HotelCustomerID","StayDayCount","StayDayCount2016","StayDayCount2015","StayDayCount2014","StayCount","StayCount2016","StayCount2015","StayCount2014","FirstStay","LastStay"]]
     df_right["UsageTenure"] = pd.to_datetime("2016-12-31T00:00:00")-stay_info["FirstStay"]
@@ -130,34 +137,63 @@ def pipeline_steps(hotelActivityData, customerData, serviceUsageData, output_dat
     df_right = df_right.reset_index()
 
     df_joined = df_left.merge(df_right, left_on = "HotelCustomerID", right_on = "ServicesCustomerID")
-    df_joined = df_joined[[col for col in df_joined.columns if col not in ["HotelCustomerID","CustomerId","ServicesCustomerID"]]]
 
-    print("df_joined", df_joined["UsageTenure"].head())
     df_joined["UsageTenure"] = df_joined["UsageTenure"].fillna(pd.Timedelta(seconds=0))
 
-    #df_joined["UsageTenure"] = df_joined["UsageTenure"].replace({'NaT': '0 day'})
 
     df_joined["UsageTenure"] = df_joined["UsageTenure"].astype(int)/(24*60*60*1e9)
-    #train = df_joined.iloc[permuted_indices[:train_len]]
-    #test = df_joined.iloc[permuted_indices[train_len:]]
+    
     cols_labels = [col for col in df_joined.columns if col not in ["FirstStay","LastStay"]]
     df_joined = df_joined[cols_labels]
-    cols = [col for col in df_joined.columns if col not in ["Label"]]
     df_joined.fillna(0,inplace = True)
-    
-    # df columns without FirstStay and LastStay, with Labels, and ScoredLabels, ScoredProbabilities of label 1
+
     if step_type =="test":
         df_result = df_joined
+        cols = [col for col in df_joined.columns if col not in ["Label","HotelCustomerID","CustomerId","ServicesCustomerID"]]
         df_result = write_results(df_result, cols, output_datastore, output_path, model,run)
     elif step_type == "train":
         permuted_indices = np.random.permutation(df_joined.index)
         train_len = int(0.8*len(permuted_indices))
         train = df_joined.iloc[permuted_indices[:train_len]]
         test = df_joined.iloc[permuted_indices[train_len:]]
+        cols = [col for col in train.columns if col not in ["Label","FirstStay","LastStay","HotelCustomerID","CustomerId","ServicesCustomerID"]]
+        
+        print("train columns")
+        model_folder = config["model_folder"]
+        model_name = config["model_name"]
+        train_steps(train, test, cols, model_folder, model_name)
+
+        print("register model")
+        model_path = "./" + config["model_folder"] 
+        description = config["description"]
+        register_model(model_path, model_name, description, workspace)
     else:
-        pass
+          raise Exception("Invalid step type, allowed values are train and test")
     return 
 
+def train_steps(train, test, cols, model_folder, model_name):
+    print("training ...")
+    clf = LogisticRegression()
+    clf.fit(train[cols].values, train["Label"].values)
+
+    print('predicting ...')
+    y_hat = clf.predict(test[cols].astype(int).values)
+
+    acc = np.average(y_hat == test["Label"].values)
+    print('Accuracy is', acc)
+
+    print("save model")
+    os.makedirs('models', exist_ok=True)    
+    joblib.dump(value=clf, filename= model_folder +'/'+ model_name + ".pkl")
+    return
+
+def register_model(model_path, model_name, description, ws):
+    model = Model.register(model_path = model_path,
+                        model_name = model_name,
+                        description = description,
+                        workspace = ws)
+    return 
+    
 def write_results(df, cols, output_datastore, output_path, model, run):
 
     ws = run.experiment.workspace
