@@ -58,7 +58,7 @@ def pipeline_steps(hotelActivityData, customerData, serviceUsageData, config):
     groupby_columns = columns_to_convert_to_integer + ["DollarsSpent","HotelCustomerID"]
     # change names after groupby
     column_names_after_groupby = ["RoomTypeLargeCount","RoomTypeSmallCount","BookingTypeOnlineCount","BookingTypePhoneCallCount","TravelCategoryBusinessCount","TravelCategoryLeisureCount","TotalDollarSpent"]
-    df1 = df_after_change_to_indicator_values[groupby_columns].groupby(by=["HotelCustomerID"]).sum()
+    df1 = df_after_change_to_indicator_values[groupby_columns].groupby(by=["HotelCustomerID"]).sum().reset_index()
     df1.rename(columns = {"RoomType_Large":"RoomTypeLargeCount", 
     "RoomType_Small":"RoomTypeSmallCount", 
     "BookingType_Online":"BookingTypeOnlineCount", 
