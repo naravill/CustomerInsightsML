@@ -56,8 +56,18 @@ def pipeline_steps(hotelActivityData, customerData, serviceUsageData, config):
         df_after_change_to_indicator_values[col] = df_after_change_to_indicator_values[col].astype(int)
     
     groupby_columns = columns_to_convert_to_integer + ["DollarsSpent","HotelCustomerID"]
+    # change names after groupby
+    column_names_after_groupby = ["RoomTypeLargeCount","RoomTypeSmallCount","BookingTypeOnlineCount","BookingTypePhoneCallCount","TravelCategoryBusinessCount","TravelCategoryLeisureCount","TotalDollarSpent"]
     df1 = df_after_change_to_indicator_values[groupby_columns].groupby(by=["HotelCustomerID"]).sum()
-    df2 = df_after_change_to_indicator_values[["HotelCustomerID","CustomerId"]]
+    df1.rename(columns = {"RoomType_Large":"RoomTypeLargeCount", 
+    "RoomType_Small":"RoomTypeSmallCount", 
+    "BookingType_Online":"BookingTypeOnlineCount", 
+    "BookingType_Phone Call":"BookingTypePhoneCallCount",
+    "TravelCategory_Business":"TravelCategoryBusinessCount",
+    "TravelCategory_Leisure":"TravelCategoryLeisureCount",
+    "TravelCategory_Leisure":"TravelCategoryLeisureCount",
+    "DollarsSpent":"DollarsSpentCount"}, inplace = True) 
+    df2 = df_after_change_to_indicator_values[["HotelCustomerID","CustomerId"]].drop_duplicates()
     df_left = df1.merge(df2,left_on = "HotelCustomerID",right_on = "HotelCustomerID")
     
     # convert NumberOfNights from the dataframe after join and select columns to integer
@@ -101,10 +111,11 @@ def pipeline_steps(hotelActivityData, customerData, serviceUsageData, config):
     df_before_sql_transform = transform_dataframe_staycount_columns(df_before_sql_transform, mask, col_name = "StayCount2014")
 
     columns_sum = ["StayDayCount","StayDayCount2016", "StayDayCount2015", "StayDayCount2014", "StayCount", "StayCount2016", "StayCount2015", "StayCount2014"]
-    df_before_sql_transform[columns_sum] = df_before_sql_transform.groupby(by = "HotelCustomerID").sum().reset_index()[columns_sum]
-    df_before_sql_transform[["FirstStay"]] = df_before_sql_transform.groupby(by = "HotelCustomerID").min().reset_index()[["CheckInDate"]]
-    df_before_sql_transform[["LastStay"]] = df_before_sql_transform.groupby(by = "HotelCustomerID").max().reset_index()[["CheckInDate"]]
-    stay_info = df_before_sql_transform[columns_sum+["FirstStay","LastStay","HotelCustomerID"]].reset_index()
+    df_unique_hotelcustomerID = df_before_sql_transform[["HotelCustomerID"]].drop_duplicates().set_index("HotelCustomerID")
+    df_unique_hotelcustomerID[columns_sum] = df_before_sql_transform.groupby(by = "HotelCustomerID").sum()[columns_sum]
+    df_unique_hotelcustomerID[["FirstStay"]] = df_before_sql_transform.groupby(by = "HotelCustomerID").min()[["CheckInDate"]]
+    df_unique_hotelcustomerID[["LastStay"]] = df_before_sql_transform.groupby(by = "HotelCustomerID").max()[["CheckInDate"]]
+    stay_info = df_unique_hotelcustomerID[columns_sum+["FirstStay","LastStay"]].reset_index()
 
     # second part of the SQL query
     df_right = stay_info[["HotelCustomerID","StayDayCount","StayDayCount2016","StayDayCount2015","StayDayCount2014","StayCount","StayCount2016","StayCount2015","StayCount2014","FirstStay","LastStay"]]
@@ -212,9 +223,12 @@ def write_results(df, cols, output_datastore, output_path, model, run):
     df["ScoredProbabilities"] = model.predict_proba(df[cols].astype(int).values)[:,1]
     print("resultProbabilities", df["ScoredProbabilities"].iloc[:10])
 
+    # set HotelCustomerID to index to remove the column1 columns in the dataframe
+    df = df.set_index("CustomerId")
+
     directory_name =  os.path.dirname(output_path)
     print("Extracting Directory {} from path {}".format(directory_name, output_path))
-
+    
     df.to_csv(filename)
     
     # Datastore.upload() is supported currently, but is being deprecated by Dataset.File.upload_directory()
